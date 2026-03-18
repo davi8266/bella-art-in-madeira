@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+
+# Build / distribuição
+*.spec
+build/
+dist/
+*.egg-info/
+*.exe
+
+# Banco de dados — NUNCA commitar dados reais
+data/
+*.db
+*.db.bak
+*.db.bak_migration
+banco_externo.db
+
+# Runtime
+uploads/
+backups/
+frontend/web/uploads/
+
+# Ambiente virtual
+venv/
+env/
+.venv/
+
+# Scripts de debug (não devem ir pro repositório)
+debug_db*.py
+check_*.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
