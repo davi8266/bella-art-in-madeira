@@ -47,9 +47,10 @@
   <div id="app-shell">
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
     <div class="container-fluid position-relative">
-      <a class="navbar-brand position-absolute top-50 start-50 translate-middle" href="#"><img src="/brand/logo.png" alt="Bella Art" class="brand-logo"></a>
+      <a class="navbar-brand position-absolute top-50 start-50 translate-middle brand-text" href="#"><span class="brand-main">Bella Art</span><span class="brand-sub">in madeira</span></a>
       <div class="d-flex align-items-center gap-2 position-absolute end-0 top-50 translate-middle-y">
         <button id="nav-network" class="btn btn-outline-light btn-sm d-flex align-items-center gap-2" title="Informações de Rede"><img src="https://img.icons8.com/fluency/20/network-cable.png" alt="Rede"><span class="d-none d-md-inline">Acesso Remoto</span></button>
+        <button id="nav-audit" class="btn btn-outline-light btn-sm d-flex align-items-center gap-2" title="Log de Auditoria" onclick="showAuditModal()"><img src="https://img.icons8.com/fluency/20/clock--v1.png" alt="Auditoria"><span class="d-none d-md-inline">Histórico</span></button>
         <button id="nav-profile" class="btn btn-outline-light btn-sm d-flex align-items-center gap-2"><img src="https://img.icons8.com/fluency/20/user-male-circle.png" alt="Perfil"><span class="d-none d-md-inline">Perfil</span></button>
       </div>
     </div>
@@ -60,12 +61,12 @@
     <div class="layout">
       <aside id="side-menu" class="sidebar">
         <button id="nav-hamb" class="hamb-btn" title="Menu"><span></span><span></span><span></span></button>
-        <a href="#" class="item active" data-tab="rel"><span class="icon"><img src="/brand/relatorio.png" alt="Relatório"></span><span class="label">Relatório</span></a>
-        <a href="#" class="item" data-tab="prod"><span class="icon"><img src="/brand/produtos.png" alt="Produtos"></span><span class="label">Produtos</span></a>
-        <a href="#" class="item" data-tab="mat"><span class="icon"><img src="/brand/materiais.png" alt="Material"></span><span class="label">Material</span></a>
-        <a href="#" class="item" data-tab="cfg"><span class="icon"><img src="/brand/Configuracao.png" alt="Config. Impostos"></span><span class="label">Config. Impostos</span></a>
-        <a href="#" class="item" data-tab="vend"><span class="icon"><img src="/brand/vendas.png" alt="Vendas"></span><span class="label">Vendas</span></a>
-        <a href="#" class="item exit" id="nav-exit" title="Sair"><span class="icon"><img src="/brand/sair.png" alt="Sair"></span><span class="label">Sair</span></a>
+        <a href="#" class="item active" data-tab="rel" data-tooltip="Relatório"><span class="icon"><img src="/brand/relatorio.png" alt="Relatório"></span><span class="label">Relatório</span></a>
+        <a href="#" class="item" data-tab="prod" data-tooltip="Produtos"><span class="icon"><img src="/brand/produtos.png" alt="Produtos"></span><span class="label">Produtos</span></a>
+        <a href="#" class="item" data-tab="mat" data-tooltip="Materiais"><span class="icon"><img src="/brand/materiais.png" alt="Material"></span><span class="label">Material</span></a>
+        <a href="#" class="item" data-tab="cfg" data-tooltip="Config. Impostos"><span class="icon"><img src="/brand/Configuracao.png" alt="Config. Impostos"></span><span class="label">Config. Impostos</span></a>
+        <a href="#" class="item" data-tab="vend" data-tooltip="Vendas"><span class="icon"><img src="/brand/vendas.png" alt="Vendas"></span><span class="label">Vendas</span></a>
+        <a href="#" class="item exit" id="nav-exit" data-tooltip="Sair" title="Sair"><span class="icon"><img src="/brand/sair.png" alt="Sair"></span><span class="label">Sair</span></a>
         
       </aside>
       <div class="content">

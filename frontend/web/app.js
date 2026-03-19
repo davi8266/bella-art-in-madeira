@@ -1,8 +1,324 @@
+/* ── Paginação ──────────────────────────────────────────────── */
+const _PAG = {};  // estado de paginação por tabela
+
+function paginate(tableId, rows, renderFn, pageSize = 20) {
+  if (!_PAG[tableId]) _PAG[tableId] = { page: 1, pageSize };
+  const state = _PAG[tableId];
+  state.pageSize = pageSize;
+  const total = rows.length;
+  const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
+  if (state.page > totalPages) state.page = totalPages;
+  const start = (state.page - 1) * state.pageSize;
+  const slice = rows.slice(start, start + state.pageSize);
+  renderFn(slice);
+  _renderPagControls(tableId, state.page, totalPages, total);
+}
+
+function _renderPagControls(tableId, page, totalPages, total) {
+  const existing = document.getElementById('pag-' + tableId);
+  if (existing) existing.remove();
+  if (totalPages <= 1) return;
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'pag-' + tableId;
+  wrap.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 4px;gap:8px;';
+  const info = document.createElement('span');
+  info.style.cssText = 'font-size:12px;color:var(--text-3);';
+  info.textContent = `${total} itens — página ${page} de ${totalPages}`;
+  const btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:4px;';
+  [['«', 1], ['‹', page - 1], ['›', page + 1], ['»', totalPages]].forEach(([label, target]) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = `background:var(--surface-raised);border:1px solid var(--border-mid);color:var(--text-2);
+      border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;transition:all .12s ease;font-family:inherit;`;
+    b.disabled = (target < 1 || target > totalPages || target === page);
+    if (!b.disabled) b.addEventListener('click', () => {
+      _PAG[tableId].page = target;
+      b.dispatchEvent(new CustomEvent('pag-change', { bubbles: true, detail: { tableId } }));
+    });
+    btns.appendChild(b);
+  });
+  wrap.appendChild(info);
+  wrap.appendChild(btns);
+  table.insertAdjacentElement('afterend', wrap);
+  // Evento customizado para re-render
+  wrap.addEventListener('pag-change', (e) => {
+    const tid = e.detail.tableId;
+    if (tid === 'materias') refreshMaterias();
+    if (tid === 'vendas')   { const pid = document.getElementById('v-produto')?.value; if (pid) loadVendasList(pid); }
+  });
+}
+
+
+/* ── Auditoria ──────────────────────────────────────────────── */
+const _AUDIT_KEY = 'bellart_audit_log';
+const _AUDIT_MAX = 200;
+
+function auditLog(acao, detalhes = {}) {
+  try {
+    const logs = _getAuditLogs();
+    const entry = {
+      ts: new Date().toISOString(),
+      acao,
+      detalhes,
+      user: (() => { try { return JSON.parse(sessionStorage.getItem('bellart_user') || '{}').username || 'sistema'; } catch { return 'sistema'; } })()
+    };
+    logs.unshift(entry);
+    if (logs.length > _AUDIT_MAX) logs.splice(_AUDIT_MAX);
+    localStorage.setItem(_AUDIT_KEY, JSON.stringify(logs));
+  } catch(e) {}
+}
+
+function _getAuditLogs() {
+  try { return JSON.parse(localStorage.getItem(_AUDIT_KEY) || '[]'); } catch { return []; }
+}
+
+function showAuditModal() {
+  let modal = document.getElementById('audit-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'audit-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9997;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+    modal.innerHTML = `
+      <div style="background:var(--surface-raised);border:1px solid var(--border-mid);border-radius:16px;
+        width:min(700px,95vw);max-height:80vh;display:flex;flex-direction:column;box-shadow:var(--shadow-lg);">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);">
+          <span style="font-size:14px;font-weight:600;color:var(--text-1);text-transform:uppercase;letter-spacing:.05em;">Log de Auditoria</span>
+          <div style="display:flex;gap:8px;">
+            <button id="audit-clear" style="background:transparent;border:1px solid rgba(248,113,113,.3);color:var(--red);
+              border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;font-family:inherit;">Limpar</button>
+            <button id="audit-close" style="background:var(--surface-active);border:1px solid var(--border-mid);color:var(--text-2);
+              border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;font-family:inherit;">Fechar</button>
+          </div>
+        </div>
+        <div style="overflow-y:auto;padding:8px 0;" id="audit-body"></div>
+      </div>`;
+    document.body.appendChild(modal);
+    document.getElementById('audit-close').onclick = () => modal.style.display = 'none';
+    document.getElementById('audit-clear').onclick = async () => {
+      const ok = await confirmar('Limpar todo o histórico de auditoria?', 'Limpar Log');
+      if (ok) { localStorage.removeItem(_AUDIT_KEY); _renderAuditLogs(); }
+    };
+    modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+  }
+  modal.style.display = 'flex';
+  _renderAuditLogs();
+}
+
+function _renderAuditLogs() {
+  const body = document.getElementById('audit-body');
+  if (!body) return;
+  const logs = _getAuditLogs();
+  if (!logs.length) {
+    body.innerHTML = '<div style="text-align:center;padding:32px;color:var(--text-3);font-size:13px;">Nenhum registro ainda</div>';
+    return;
+  }
+  const ICONS = { 'produto_criado':'✚', 'produto_editado':'✎', 'produto_removido':'✕',
+    'materia_criada':'✚', 'materia_editada':'✎', 'materia_removida':'✕',
+    'venda_criada':'↑', 'venda_removida':'↓', 'backup_exportado':'⬇', 'backup_importado':'⬆',
+    'login':'◎', 'taxa_salva':'%' };
+  const COLORS = { 'criado':'var(--green)','criada':'var(--green)','editado':'var(--accent)',
+    'editada':'var(--accent)','removido':'var(--red)','removida':'var(--red)',
+    'exportado':'var(--cyan)','importado':'var(--yellow)','login':'var(--accent2)','salva':'var(--accent)' };
+  body.innerHTML = logs.map(l => {
+    const d = new Date(l.ts);
+    const hora = d.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const tipo = l.acao.split('_').pop();
+    const cor = COLORS[tipo] || 'var(--text-3)';
+    const icon = ICONS[l.acao] || '·';
+    const det = Object.entries(l.detalhes || {}).map(([k,v]) => `<span style="color:var(--text-3)">${k}:</span> ${v}`).join(' · ');
+    return `<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 20px;border-bottom:1px solid var(--border);">
+      <span style="color:${cor};font-size:14px;margin-top:1px;min-width:16px;">${icon}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+          <span style="font-size:13px;color:var(--text-1);font-weight:500;">${l.acao.replace(/_/g,' ')}</span>
+          <span style="font-size:11px;color:var(--text-3);white-space:nowrap;">${hora} · ${l.user}</span>
+        </div>
+        ${det ? `<div style="font-size:12px;color:var(--text-2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${det}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ============================================================
+   Melhorias de alta prioridade — v2
+   1. apiFetch: wrapper com tratamento de erros de rede
+   2. Validação de formulários
+   3. Modal de confirmação antes de deletar
+   ============================================================ */
+
+// ── 1. Monitor de conexão ────────────────────────────────────
+let _isOnline = true;
+
+function setOnlineStatus(online) {
+  if (_isOnline === online) return;
+  _isOnline = online;
+  let bar = document.getElementById('offline-bar');
+  if (!online) {
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'offline-bar';
+      bar.style.cssText = `
+        position:fixed; top:0; left:0; right:0; z-index:99999;
+        background:#f87171; color:#fff; text-align:center;
+        font-size:13px; font-weight:600; padding:6px 12px;
+        letter-spacing:.04em; animation: slideDown .3s ease;
+      `;
+      bar.textContent = '⚠ Sem conexão com o servidor — verifique se o Bellart está rodando';
+      document.body.prepend(bar);
+    }
+  } else {
+    if (bar) { bar.style.animation = 'slideUp .3s ease'; setTimeout(() => bar.remove(), 300); }
+    showToast('<div class="alert alert-success">✓ Conexão restabelecida</div>');
+  }
+}
+
+// Wrapper de fetch com tratamento de erros centralizado
+async function apiFetch(url, options = {}) {
+  try {
+    const r = await fetch(url, options);
+    setOnlineStatus(true);
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      throw new Error(`HTTP ${r.status}: ${text || r.statusText}`);
+    }
+    return r;
+  } catch (e) {
+    if (e instanceof TypeError && e.message.includes('fetch')) {
+      setOnlineStatus(false);
+      throw new Error('Sem conexão com o servidor');
+    }
+    setOnlineStatus(true);
+    throw e;
+  }
+}
+
+// Checagem periódica de conexão a cada 10s
+setInterval(async () => {
+  try {
+    await apiFetch('/api/network_info', { cache: 'no-store' });
+    setOnlineStatus(true);
+  } catch {
+    setOnlineStatus(false);
+  }
+}, 10000);
+
+// ── 2. Modal de confirmação elegante ────────────────────────
+function confirmar(mensagem, titulo = 'Confirmar') {
+  return new Promise(resolve => {
+    let modal = document.getElementById('confirm-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'confirm-modal';
+      modal.style.cssText = `
+        position:fixed; inset:0; z-index:9998;
+        background:rgba(0,0,0,.6); display:flex;
+        align-items:center; justify-content:center;
+        backdrop-filter:blur(4px);
+      `;
+      modal.innerHTML = `
+        <div id="confirm-box" style="
+          background:#282d40; border:1px solid rgba(255,255,255,.16);
+          border-radius:16px; padding:28px 32px; max-width:400px; width:90%;
+          box-shadow:0 24px 48px rgba(0,0,0,.6);
+          animation: softAppear .2s ease;
+        ">
+          <div id="confirm-titulo" style="font-size:16px;font-weight:600;color:#f0f2f8;margin-bottom:10px;"></div>
+          <div id="confirm-msg" style="font-size:14px;color:#b0b8d0;margin-bottom:24px;line-height:1.5;"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button id="confirm-nao" style="
+              background:transparent; border:1px solid rgba(255,255,255,.16);
+              color:#b0b8d0; border-radius:8px; padding:8px 20px;
+              font-size:13px; font-weight:500; cursor:pointer;
+              transition:all .15s ease; font-family:inherit;
+            ">Cancelar</button>
+            <button id="confirm-sim" style="
+              background:#f87171; border:1px solid #f87171;
+              color:#fff; border-radius:8px; padding:8px 20px;
+              font-size:13px; font-weight:600; cursor:pointer;
+              transition:all .15s ease; font-family:inherit;
+            ">Confirmar</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+
+    document.getElementById('confirm-titulo').textContent = titulo;
+    document.getElementById('confirm-msg').textContent = mensagem;
+    modal.style.display = 'flex';
+
+    const sim = document.getElementById('confirm-sim');
+    const nao = document.getElementById('confirm-nao');
+
+    const cleanup = () => { modal.style.display = 'none'; };
+
+    sim.onclick = () => { cleanup(); resolve(true); };
+    nao.onclick = () => { cleanup(); resolve(false); };
+    modal.onclick = (e) => { if (e.target === modal) { cleanup(); resolve(false); } };
+  });
+}
+
+// ── 3. Validação de formulários ─────────────────────────────
+function validarProduto(nome, precos) {
+  if (!nome || !nome.trim()) {
+    showToast('<div class="alert alert-warning">⚠ Nome do produto é obrigatório</div>');
+    document.getElementById('p-nome')?.focus();
+    return false;
+  }
+  if (nome.trim().length < 2) {
+    showToast('<div class="alert alert-warning">⚠ Nome deve ter pelo menos 2 caracteres</div>');
+    return false;
+  }
+  for (const [plat, val] of Object.entries(precos)) {
+    if (val < 0) {
+      showToast(`<div class="alert alert-warning">⚠ Preço da ${plat} não pode ser negativo</div>`);
+      return false;
+    }
+  }
+  return true;
+}
+
+function validarMateria(nome, estoque, custo) {
+  if (!nome || !nome.trim()) {
+    showToast('<div class="alert alert-warning">⚠ Nome da matéria-prima é obrigatório</div>');
+    document.getElementById('m-nome')?.focus();
+    return false;
+  }
+  if (estoque < 0) {
+    showToast('<div class="alert alert-warning">⚠ Estoque não pode ser negativo</div>');
+    return false;
+  }
+  if (custo < 0) {
+    showToast('<div class="alert alert-warning">⚠ Custo médio não pode ser negativo</div>');
+    return false;
+  }
+  return true;
+}
+
+function validarVenda(produtoId, plataformaId, quantidade) {
+  if (!produtoId) {
+    showToast('<div class="alert alert-warning">⚠ Selecione um produto</div>');
+    return false;
+  }
+  if (!plataformaId) {
+    showToast('<div class="alert alert-warning">⚠ Selecione uma plataforma</div>');
+    return false;
+  }
+  if (!quantidade || quantidade < 1 || !Number.isInteger(Number(quantidade))) {
+    showToast('<div class="alert alert-warning">⚠ Quantidade deve ser um número inteiro maior que zero</div>');
+    return false;
+  }
+  return true;
+}
+
 let productsCacheForSearch = [];
 
 async function loadProdutos() {
   try{
-    const r = await fetch('/api/produtos?ts=' + Date.now(), { cache: 'no-store' });
+    const r = await apiFetch('/api/produtos?ts=' + Date.now(), { cache: 'no-store' });
     const data = await r.json();
     productsCacheForSearch = data;
     const datalist = document.getElementById('produto-datalist');
@@ -140,7 +456,7 @@ async function loadRelatorios() {
     clearRelatoriosView();
     return;
   }
-  const r = await fetch('/api/relatorios/' + pid);
+  const r = await apiFetch('/api/relatorios/' + pid);
   const rows = await r.json();
   const rowsCalc = rows.map(row=>{
     const platName = String(row.plataforma || '');
@@ -200,7 +516,7 @@ async function loadRelatorios() {
           //   platApi = 'Mercado Livre';
           // }
           try {
-            await fetch(`/api/prices/${pid}`, {
+            await apiFetch(`/api/prices/${pid}`, {
               method:'POST',
               headers:{'Content-Type':'application/json'},
               body: JSON.stringify({plataforma: platApi, preco: val})
@@ -258,7 +574,7 @@ async function loadRelatorios() {
   }
 
   // Vendas do Produto (todas)
-  const vr = await fetch(`/api/vendas/${pid}`);
+  const vr = await apiFetch(`/api/vendas/${pid}`);
   const vendas = await vr.json();
   await ensureRelPlatforms();
   const filtered = filterRelVendas(vendas);
@@ -342,7 +658,7 @@ async function loadRelatorios() {
   });
 
   // Resumo de Vendas via QR
-  const vqr = await fetch(`/api/vendas_qr/${pid}`);
+  const vqr = await apiFetch(`/api/vendas_qr/${pid}`);
   const vendasQR = await vqr.json();
   const totalQtdQR = vendasQR.reduce((s,v)=> s + Number(v.quantidade||0), 0);
   const totalRecQR = vendasQR.reduce((s,v)=> s + Number(v.quantidade||0) * Number(v.preco||0), 0);
@@ -374,7 +690,7 @@ async function loadRelatorios() {
 let relPlatformsCache = [];
 async function ensureRelPlatforms(){
   if (relPlatformsCache.length) return;
-  const r = await fetch('/api/platforms');
+  const r = await apiFetch('/api/platforms');
   relPlatformsCache = await r.json();
   const sel = document.getElementById('rel-v-plat');
   if (sel){
@@ -448,13 +764,13 @@ document.addEventListener('DOMContentLoaded', () => {
   try {
     console.log('App starting...');
     const exitBtn1 = document.getElementById('nav-exit');
-    if (exitBtn1){ exitBtn1.addEventListener('click', async (e)=>{ e.preventDefault(); await fetch('/api/exit', {method:'POST'}); }); }
+    if (exitBtn1){ exitBtn1.addEventListener('click', async (e)=>{ e.preventDefault(); await apiFetch('/api/exit', {method:'POST'}); }); }
     
     const netBtn = document.getElementById('nav-network');
     if (netBtn){
       netBtn.addEventListener('click', async () => {
         try {
-          const r = await fetch('/api/network_info');
+          const r = await apiFetch('/api/network_info');
           const data = await r.json();
           const url = `http://${data.ip}:${data.port}/`;
           showToast(`
@@ -543,7 +859,7 @@ function toggleProfile(show){
 async function doLogin(){
   const user = document.getElementById('login-user').value.trim();
   const pass = document.getElementById('login-pass').value;
-  const r = await fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username:user, password:pass})});
+  const r = await apiFetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username:user, password:pass})});
   const j = await r.json();
   if (j && j.ok){ localStorage.setItem('authUser', JSON.stringify(j.user)); document.getElementById('profile-user').value = j.user.username; toggleLogin(false); continueApp(); }
   else { const msg = document.getElementById('login-msg'); if (msg) msg.innerHTML = '<div class="alert alert-danger">Login inválido</div>'; }
@@ -562,7 +878,7 @@ async function saveProfile(){
   if (!u) { toggleLogin(true); return; }
   const old = document.getElementById('profile-old').value;
   const nw = document.getElementById('profile-new').value;
-  const r = await fetch('/api/users/password', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username: u.username, old: old, new: nw})});
+  const r = await apiFetch('/api/users/password', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username: u.username, old: old, new: nw})});
   const j = await r.json();
   const msg = document.getElementById('profile-msg');
   if (j && j.ok){ if (msg) msg.innerHTML = '<div class="alert alert-success">Senha alterada</div>'; }
@@ -825,7 +1141,7 @@ function toggleEstoqueModal(show){
 async function openEstoqueModal(){
   if (!estoqueMateriaisCache.length){
     try{
-      const rows = await (await fetch('/api/materias')).json();
+      const rows = await (await apiFetch('/api/materias')).json();
       estoqueMateriaisCache = rows;
     } catch(e){
       showToast('<div class="alert alert-warning">Não foi possível carregar materiais de estoque</div>');
@@ -1116,7 +1432,7 @@ async function openPrintModal(){
     // Fetch QRs
     let qrs = [];
     try {
-      qrs = await (await fetch(`/api/qr/${p.id}`)).json();
+      qrs = await (await apiFetch(`/api/qr/${p.id}`)).json();
     } catch(e) {}
     
     // Fallback if no QRs? User can generate them in the main view.
@@ -1172,7 +1488,7 @@ async function downloadPrintPDF(){
   btn.innerText = 'Gerando PDF...';
   
   try {
-    const r = await fetch('/api/print_qrs', {
+    const r = await apiFetch('/api/print_qrs', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload)
@@ -1454,7 +1770,7 @@ async function initProdutos(){
       const inputs = document.querySelectorAll('#comp tbody input.comp-qtd');
       for (const inp of inputs){
         const id = inp.dataset.id;
-        await fetch(`/api/composicao/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({quantidade: parseFloat(inp.value||0)})});
+        await apiFetch(`/api/composicao/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({quantidade: parseFloat(inp.value||0)})});
       }
       setCompReadonly(true);
       toggleCompButtons({editar:true, salvar:false, cancelar:false});
@@ -1471,7 +1787,7 @@ async function initProdutos(){
 }
 
 async function refreshProdutos(){
-  const r = await fetch('/api/produtos?ts=' + Date.now(), { cache: 'no-store' });
+  const r = await apiFetch('/api/produtos?ts=' + Date.now(), { cache: 'no-store' });
   const data = await r.json();
   const qEl = document.getElementById('p-search'); const q = String((qEl && qEl.value) ? qEl.value : '').toLowerCase();
   const sEl = document.getElementById('p-sort'); const sort = (sEl && sEl.value) ? sEl.value : 'nome';
@@ -1531,7 +1847,7 @@ async function selectProduto(p){
   prodSel = p;
   document.getElementById('p-nome').value = p.nome;
   document.getElementById('p-sku').value = p.sku || '';
-  const pr = await (await fetch(`/api/prices/${p.id}`)).json();
+  const pr = await (await apiFetch(`/api/prices/${p.id}`)).json();
   document.getElementById('p-ml-classico').value = (pr['Mercado Livre Clássico']||0).toFixed(2);
   document.getElementById('p-ml-premium').value = (pr['Mercado Livre Premium']||0).toFixed(2);
   document.getElementById('p-mag').value = (pr['Magalu']||0).toFixed(2);
@@ -1569,9 +1885,16 @@ function setProdutoForm(o){
 async function saveProduto(){
   const nome = document.getElementById('p-nome').value.trim();
   const sku = document.getElementById('p-sku').value.trim();
+  const _precos = {
+    'ML Clássico': parseFloat(document.getElementById('p-ml-classico').value||0),
+    'ML Premium':  parseFloat(document.getElementById('p-ml-premium').value||0),
+    'Magalu':      parseFloat(document.getElementById('p-mag').value||0),
+    'Shopee':      parseFloat(document.getElementById('p-sh').value||0),
+  };
+  if (!validarProduto(nome, _precos)) return;
   if (!nome) return;
   if (!prodSel){
-    const r = await fetch('/api/products', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome, sku})});
+    const r = await apiFetch('/api/products', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome, sku})});
     const j = await r.json();
     prodSel = {id: j.id, nome};
     if (pendingPhotoFile){
@@ -1579,11 +1902,11 @@ async function saveProduto(){
       pendingPhotoFile = null;
     }
     for (const item of pendingComposition){
-      await fetch('/api/composicao', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({produto_id: prodSel.id, materia_id: item.materia_id, quantidade: item.quantidade})});
+      await apiFetch('/api/composicao', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({produto_id: prodSel.id, materia_id: item.materia_id, quantidade: item.quantidade})});
     }
     pendingComposition = [];
   } else {
-    await fetch(`/api/products/${prodSel.id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome, sku})});
+    await apiFetch(`/api/products/${prodSel.id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome, sku})});
     prodSel.nome = nome;
     prodSel.sku = sku;
   }
@@ -1591,12 +1914,12 @@ async function saveProduto(){
   for (const inp of inputs){
     const id = inp.dataset.id;
     if (!id) continue;
-    await fetch(`/api/composicao/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({quantidade: parseFloat(inp.value||0)})});
+    await apiFetch(`/api/composicao/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({quantidade: parseFloat(inp.value||0)})});
   }
-  await fetch(`/api/prices/${prodSel.id}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({plataforma:'Mercado Livre Clássico', preco: parseFloat(document.getElementById('p-ml-classico').value||0)})});
-  await fetch(`/api/prices/${prodSel.id}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({plataforma:'Mercado Livre Premium', preco: parseFloat(document.getElementById('p-ml-premium').value||0)})});
-  await fetch(`/api/prices/${prodSel.id}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({plataforma:'Magalu', preco: parseFloat(document.getElementById('p-mag').value||0)})});
-  await fetch(`/api/prices/${prodSel.id}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({plataforma:'Shopee', preco: parseFloat(document.getElementById('p-sh').value||0)})});
+  await apiFetch(`/api/prices/${prodSel.id}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({plataforma:'Mercado Livre Clássico', preco: parseFloat(document.getElementById('p-ml-classico').value||0)})});
+  await apiFetch(`/api/prices/${prodSel.id}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({plataforma:'Mercado Livre Premium', preco: parseFloat(document.getElementById('p-ml-premium').value||0)})});
+  await apiFetch(`/api/prices/${prodSel.id}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({plataforma:'Magalu', preco: parseFloat(document.getElementById('p-mag').value||0)})});
+  await apiFetch(`/api/prices/${prodSel.id}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({plataforma:'Shopee', preco: parseFloat(document.getElementById('p-sh').value||0)})});
   await refreshProdutos();
   await loadRelatorios();
   await selectProduto(prodSel);
@@ -1616,7 +1939,10 @@ async function saveProduto(){
 
 async function deleteProduto(){
   if (!prodSel) return;
-  await fetch(`/api/products/${prodSel.id}`, {method:'DELETE'});
+  const _okDel = await confirmar(`Remover o produto "${prodSel.nome}"? Todos os dados relacionados serão removidos.`, "Remover Produto");
+  if (!_okDel) return;
+  auditLog('produto_removido', {nome: prodSel.nome, id: prodSel.id});
+  await apiFetch(`/api/products/${prodSel.id}`, {method:'DELETE'});
   prodSel = null;
   await refreshProdutos();
   await loadProdutos();
@@ -1644,7 +1970,7 @@ async function refreshComposicao(){
     setCompReadonly(false);
     return;
   }
-  const rows = await (await fetch(`/api/composicao/${prodSel.id}`)).json();
+  const rows = await (await apiFetch(`/api/composicao/${prodSel.id}`)).json();
   rows.forEach(r=>{
     const rendTxt = formatRendimentoFromQtd(r.qtd, r.unidade);
     const tr = document.createElement('tr');
@@ -1654,7 +1980,7 @@ async function refreshComposicao(){
   tbody.querySelectorAll('button[data-del]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const id = btn.dataset.del;
-      await fetch(`/api/composicao/${id}`, {method:'DELETE'});
+      await apiFetch(`/api/composicao/${id}`, {method:'DELETE'});
       await refreshComposicao();
     });
   });
@@ -1677,7 +2003,7 @@ function formatRendimentoFromQtd(qtd, unidade){
 }
 
 async function refreshMateriasChoices(){
-  const mats = await (await fetch('/api/materias')).json();
+  const mats = await (await apiFetch('/api/materias')).json();
   const sel = document.getElementById('c-mat');
   sel.innerHTML='';
   materiasCache = mats;
@@ -1698,7 +2024,7 @@ async function vincularMateria(){
     await refreshComposicao();
     return;
   }
-  await fetch('/api/composicao', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({produto_id: prodSel.id, materia_id, quantidade})});
+  await apiFetch('/api/composicao', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({produto_id: prodSel.id, materia_id, quantidade})});
   await refreshComposicao();
 }
 
@@ -1934,18 +2260,21 @@ async function initMaterias(){
 
 async function refreshMaterias(){
   try{
-    const rows = await (await fetch('/api/materias')).json();
+    const rows = await (await apiFetch('/api/materias')).json();
     const tbody = document.querySelector('#materias tbody');
     if (!tbody) return;
-    tbody.innerHTML='';
-    rows.forEach(m=>{
-      const tr = document.createElement('tr');
-      tr.dataset.id = m.id;
-      tr.innerHTML = `<td>${m.id}</td><td>${m.nome}</td><td>${m.unidade}</td><td>${parseFloat(m.estoque).toFixed(4).replace(/\.?0+$/, '')}</td><td>${m.custo}</td>`;
-      tr.addEventListener('click', ()=>selectMateria(m));
-      tbody.appendChild(tr);
-    });
-    if (rows.length) selectMateria(rows[0]);
+    paginate('materias', rows, (slice) => {
+      tbody.innerHTML='';
+      slice.forEach(m=>{
+        const tr = document.createElement('tr');
+        tr.dataset.id = m.id;
+        tr.innerHTML = `<td>${m.id}</td><td>${m.nome}</td><td>${m.unidade}</td><td>${parseFloat(m.estoque).toFixed(4).replace(/\.?0+$/, '')}</td><td>${m.custo}</td>`;
+        tr.addEventListener('click', ()=>selectMateria(m));
+        tbody.appendChild(tr);
+      });
+    }, 15);
+    const firstRow = rows[0];
+    if (firstRow) selectMateria(firstRow);
   } catch(err){
     showMatMsg('<div class="alert alert-warning">Não foi possível listar matérias</div>');
   }
@@ -1978,11 +2307,11 @@ async function saveMateria(){
   const estoque = parseFloat(document.getElementById('m-est').value||0);
   const custo = parseFloat(document.getElementById('m-custo').value||0);
   if (!matSel){
-    const r = await fetch('/api/materias', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome, unidade, estoque, custo})});
+    const r = await apiFetch('/api/materias', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome, unidade, estoque, custo})});
     const j = await r.json();
     matSel = {id:j.id, nome, unidade, estoque, custo};
   } else {
-    await fetch(`/api/materias/${matSel.id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome, unidade, estoque, custo})});
+    await apiFetch(`/api/materias/${matSel.id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome, unidade, estoque, custo})});
     matSel = {id:matSel.id, nome, unidade, estoque, custo};
   }
   await refreshMaterias();
@@ -1991,6 +2320,7 @@ async function saveMateria(){
   setMatReadonly(true);
   toggleMatButtons({editar:true, salvar:false, cancelar:false});
   showMatMsg('<div class="alert alert-success alert-dismissible fade show" role="alert">Matéria alterada com sucesso.<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>');
+  auditLog(matSel && matSel.id ? 'materia_editada' : 'materia_criada', {nome});
 }
 
 function startNovoProdutoInline(){
@@ -2028,7 +2358,10 @@ window.addEventListener('message', async (ev)=>{
 
 async function deleteMateria(){
   if (!matSel) return;
-  await fetch(`/api/materias/${matSel.id}`, {method:'DELETE'});
+  const _okMat = await confirmar(`Remover "${matSel.nome}"? O material será desvinculado de todos os produtos.`, "Remover Matéria-Prima");
+  if (!_okMat) return;
+  auditLog('materia_removida', {nome: matSel.nome});
+  await apiFetch(`/api/materias/${matSel.id}`, {method:'DELETE'});
   matSel = null;
   await refreshMaterias();
   await refreshMateriasChoices();
@@ -2073,7 +2406,7 @@ async function initConfig(){
 }
 
 async function renderTaxas(){
-  const taxes = await (await fetch('/api/taxes')).json();
+  const taxes = await (await apiFetch('/api/taxes')).json();
   const wrap = document.getElementById('cfg-taxas');
   if (!wrap) return;
   wrap.innerHTML = '';
@@ -2093,7 +2426,7 @@ async function renderTaxas(){
       const pval = parseFloat(document.getElementById(`tax-${nome}-p`).value||0)/100.0;
       const fval = parseFloat(document.getElementById(`tax-${nome}-f`).value||0);
       const ival = parseFloat(document.getElementById(`tax-${nome}-i`).value||0)/100.0;
-      await fetch(`/api/taxes/${nome}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({percentual:pval, fixo:fval, imposto:ival})});
+      await apiFetch(`/api/taxes/${nome}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({percentual:pval, fixo:fval, imposto:ival})});
       await renderTaxas();
       await loadRelatorios();
     });
@@ -2166,7 +2499,7 @@ async function initVendas(){
 }
 
 async function loadVendasProdutos(){
-  const r = await fetch('/api/produtos');
+  const r = await apiFetch('/api/produtos');
   const data = await r.json();
   const sel = document.getElementById('v-produto');
   if (!sel) return;
@@ -2186,7 +2519,7 @@ async function loadVendasProdutos(){
 }
 
 async function loadVendasPlataformas(){
-  const r = await fetch('/api/platforms');
+  const r = await apiFetch('/api/platforms');
   const data = await r.json();
   const sel = document.getElementById('v-plataforma');
   if (!sel) return;
@@ -2229,7 +2562,7 @@ async function updateVendasPriceView(){
   const platId = parseInt(vPlatEl && vPlatEl.value ? vPlatEl.value : 0);
   const inp = document.getElementById('v-preco-view');
   if (!platId || !inp) return;
-  const prices = await (await fetch(`/api/prices/${pid}`)).json();
+  const prices = await (await apiFetch(`/api/prices/${pid}`)).json();
   const el = document.querySelector(`#v-plataforma option[value='${platId}']`);
   const platLabel = el ? (el.textContent || '') : '';
   let priceKey = platLabel;
@@ -2242,7 +2575,7 @@ async function updateVendasPriceView(){
 }
 
 async function loadVendasList(pid){
-  const rows = await (await fetch(`/api/vendas/${pid}`)).json();
+  const rows = await (await apiFetch(`/api/vendas/${pid}`)).json();
   const table = document.getElementById('vendas');
   if (!table) return;
   
@@ -2258,38 +2591,38 @@ async function loadVendasList(pid){
       thead.innerHTML = '<th>Data</th><th>Plataforma</th><th>Qtd</th><th>Preço</th><th style="width:50px"></th>';
   }
 
-  rows.forEach(r=>{
-    const tr = document.createElement('tr');
-    let html = `<td>${r.data}</td>`;
-    if (isAll) {
-        html += `<td>${r.produto_nome || '-'}</td>`;
-    }
-    html += `<td>${r.plataforma}</td><td>${r.quantidade}</td><td>${Number(r.preco).toFixed(2)}</td>`;
-    
-    tr.innerHTML = html;
-    
-    const tdAct = document.createElement('td');
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-sm btn-outline-danger py-0 px-2';
-    btn.title = 'Excluir Venda';
-    btn.textContent = '×';
-    btn.style.fontSize = '1.2rem';
-    btn.onclick = () => deleteVenda(r.id, pid);
-    tdAct.appendChild(btn);
-    tr.appendChild(tdAct);
-    
-    tbody.appendChild(tr);
-  });
+  paginate('vendas', rows, (slice) => {
+    tbody.innerHTML = '';
+    slice.forEach(r=>{
+      const tr = document.createElement('tr');
+      let html = `<td>${r.data}</td>`;
+      if (isAll) html += `<td>${r.produto_nome || '-'}</td>`;
+      html += `<td>${r.plataforma}</td><td>${r.quantidade}</td><td>${Number(r.preco).toFixed(2)}</td>`;
+      tr.innerHTML = html;
+      const tdAct = document.createElement('td');
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-sm btn-outline-danger py-0 px-2';
+      btn.title = 'Excluir Venda';
+      btn.textContent = '×';
+      btn.style.fontSize = '1.2rem';
+      btn.onclick = () => deleteVenda(r.id, pid);
+      tdAct.appendChild(btn);
+      tr.appendChild(tdAct);
+      tbody.appendChild(tr);
+    });
+  }, 20);
   softAppear(table);
 }
 
 async function deleteVenda(vid, pid){
-  if(!confirm('Deseja realmente excluir esta venda?')) return;
+  const _okVenda = await confirmar('Excluir esta venda? O estoque será restaurado.', 'Excluir Venda');
+  if(!_okVenda) return;
   try {
-    const r = await fetch(`/api/vendas/${vid}`, {method:'DELETE'});
+    const r = await apiFetch(`/api/vendas/${vid}`, {method:'DELETE'});
     const j = await r.json();
     if (j.ok){
       showToast('<div class="alert alert-success">Venda excluída</div>');
+      auditLog('venda_removida', {id: vid});
       await loadVendasList(pid);
     } else {
       showToast('<div class="alert alert-warning">Erro ao excluir</div>');
@@ -2315,7 +2648,7 @@ async function submitVenda(){
       else if (low.includes('clássico') || low.includes('classico')) ml_mode = 'classico';
     }
   }
-  const r = await fetch('/api/vendas', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({produto_id: pid, plataforma_id, quantidade, data: dataStr, ml_mode})});
+  const r = await apiFetch('/api/vendas', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({produto_id: pid, plataforma_id, quantidade, data: dataStr, ml_mode})});
   const j = await r.json();
   if (j && j.id){
     showToast(`<div class="alert alert-success">Venda registrada</div>`);
@@ -2337,7 +2670,7 @@ async function registerQR(){
   const vPlatEl = document.getElementById('v-plataforma');
   const plidCtx = parseInt(vPlatEl && vPlatEl.value ? vPlatEl.value : 0);
   if (!code) return;
-  const r = await fetch('/api/qr/register', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code, quantidade: qtd, produto_id: pidCtx||undefined, plataforma_id: plidCtx||undefined})});
+  const r = await apiFetch('/api/qr/register', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code, quantidade: qtd, produto_id: pidCtx||undefined, plataforma_id: plidCtx||undefined})});
   const j = await r.json();
   if (j && j.id){
     showToast('<div class="alert alert-success">Venda por QR registrada</div>');
@@ -2358,7 +2691,7 @@ async function renderQRCodes(){
   const delAllBtn = document.getElementById('qr-del-all');
   if (!list || !prodSel) return;
   list.innerHTML = '';
-  const rows = await (await fetch(`/api/qr/${prodSel.id}`)).json();
+  const rows = await (await apiFetch(`/api/qr/${prodSel.id}`)).json();
   rows.forEach((row, idx)=>{
     const item = document.createElement('div');
     item.className = 'list-group-item';
@@ -2446,7 +2779,7 @@ async function renderQRCodes(){
   });
   if (genBtn){
     genBtn.onclick = async ()=>{
-      await fetch(`/api/qr/${prodSel.id}?force=1`, {method:'POST'});
+      await apiFetch(`/api/qr/${prodSel.id}?force=1`, {method:'POST'});
       await renderQRCodes();
       showToast('<div class="alert alert-success">Códigos QR atualizados</div>');
     };
@@ -2455,7 +2788,7 @@ async function renderQRCodes(){
     genAllBtn.onclick = async ()=>{
       if(!confirm('Isso irá gerar/atualizar QR Codes para TODOS os produtos ativos. Deseja continuar?')) return;
       try {
-        const resp = await fetch('/api/qr/generate_all_global', {method:'POST'});
+        const resp = await apiFetch('/api/qr/generate_all_global', {method:'POST'});
         const data = await resp.json();
         if (data.ok){
           showToast(`<div class="alert alert-success">Processo concluído! ${data.count} QR Codes verificados/gerados.</div>`);
@@ -2470,7 +2803,7 @@ async function renderQRCodes(){
   }
   if (delAllBtn){
     delAllBtn.onclick = async ()=>{
-      await fetch(`/api/qr/${prodSel.id}`, {method:'DELETE'});
+      await apiFetch(`/api/qr/${prodSel.id}`, {method:'DELETE'});
       await renderQRCodes();
       showToast('<div class="alert alert-warning">Todos os códigos removidos</div>');
     };
@@ -2502,7 +2835,7 @@ async function uploadProdutoPhoto(){
   const file = document.getElementById('p-photo-file').files[0];
   if (!file) return;
   const buf = await file.arrayBuffer();
-  await fetch(`/api/products/${prodSel.id}/photo`, {method:'POST', headers:{'Content-Type':'application/octet-stream'}, body: buf});
+  await apiFetch(`/api/products/${prodSel.id}/photo`, {method:'POST', headers:{'Content-Type':'application/octet-stream'}, body: buf});
   loadProdutoPhoto();
 }
 
@@ -2534,7 +2867,7 @@ async function initQRTab(){
   if (btn) btn.onclick = registerQR2;
   // carregar últimas vendas globais (opcional: últimas 20)
   try{
-    const r = await fetch('/api/produtos');
+    const r = await apiFetch('/api/produtos');
     const prods = await r.json();
     // mostra nada aqui; deixamos tabela para mostrar resultados após registro
     if (tableBody) tableBody.innerHTML='';
@@ -2548,7 +2881,7 @@ async function registerQR2(){
   const qtdEl2 = document.getElementById('qr2-qtd');
   const qtd = parseInt(qtdEl2 && qtdEl2.value ? qtdEl2.value : 1);
   if (!code) return;
-  const r = await fetch('/api/qr/register', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code, quantidade: qtd})});
+  const r = await apiFetch('/api/qr/register', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code, quantidade: qtd})});
   const j = await r.json();
   if (j && j.id){
     showToast('<div class="alert alert-success">Venda por QR registrada</div>');
@@ -2562,7 +2895,7 @@ async function registerQR2(){
 
 async function refreshQR2Last(produtoId){
   try{
-    const rows = await (await fetch(`/api/vendas/${produtoId}`)).json();
+    const rows = await (await apiFetch(`/api/vendas/${produtoId}`)).json();
     const tbody = document.querySelector('#qr2-last tbody');
     if (!tbody) return;
     tbody.innerHTML='';
@@ -2594,7 +2927,7 @@ function showBackupMsg(html){
 async function exportBackup(){
   // Primeiro tenta salvar diretamente na pasta Downloads via backend
   try{
-    const respSave = await fetch('/api/backup/save?dest=downloads', {method:'POST'});
+    const respSave = await apiFetch('/api/backup/save?dest=downloads', {method:'POST'});
     const j = await respSave.json();
     if (respSave.ok && j && j.ok){
       const path = (j.path||'').replace(/\\/g,'/');
@@ -2604,7 +2937,7 @@ async function exportBackup(){
   } catch(_e){ /* continua com fallback de download */ }
   // Fallback: baixar pelo navegador
   try{
-    const resp = await fetch('/api/backup');
+    const resp = await apiFetch('/api/backup');
     if (!resp.ok) throw new Error('Falha ao gerar backup');
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
@@ -2630,7 +2963,7 @@ async function importBackup(){
       return;
     }
     const buf = await file.arrayBuffer();
-    const resp = await fetch('/api/restore', {method:'POST', headers:{'Content-Type':'application/zip'}, body: buf});
+    const resp = await apiFetch('/api/restore', {method:'POST', headers:{'Content-Type':'application/zip'}, body: buf});
     const j = await resp.json();
     if (j && j.ok){
       showBackupMsg('<div class="alert alert-success alert-dismissible fade show" role="alert">Importação concluída. Dados atualizados.<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>');
@@ -2651,7 +2984,7 @@ async function importBackup(){
 
 async function saveBackupDirect(){
   try{
-    const resp = await fetch('/api/backup/save', {method:'POST'});
+    const resp = await apiFetch('/api/backup/save', {method:'POST'});
     const j = await resp.json();
     if (j && j.ok){
       const path = (j.path||'').replace(/\\/g,'/');
@@ -2726,7 +3059,7 @@ async function addBatchItem(code){
       code = code.replace(/\s+/g,'').replace(/[^A-Za-z0-9-]/g,'');
       if(!code) return;
       
-      const r = await fetch(`/api/qr/lookup?code=${encodeURIComponent(code)}`);
+      const r = await apiFetch(`/api/qr/lookup?code=${encodeURIComponent(code)}`);
       const data = await r.json();
       if(data.error){
           showToast(`<div class="alert alert-warning">${data.error}</div>`);
@@ -2775,7 +3108,7 @@ function removeBatchItem(idx){
 async function finishBatch(){
     if(batchItems.length === 0) return;
     try {
-        const r = await fetch('/api/vendas/batch', {
+        const r = await apiFetch('/api/vendas/batch', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(batchItems)
