@@ -1438,3 +1438,111 @@ html, body { background: #0e1018 !important; }
   font-weight: 700 !important;
   font-size: 14px !important;
 }
+
+/* ── Barra de título customizada (Electron) ──────────────── */
+#titlebar {
+  display: none; /* mostrado via JS apenas no Electron */
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 36px;
+  background: #0e1018;
+  border-bottom: 1px solid rgba(120,140,220,.20);
+  z-index: 99999;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0;
+  -webkit-app-region: drag; /* área arrastável */
+  user-select: none;
+}
+
+#titlebar-drag {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-left: 14px;
+  -webkit-app-region: drag;
+  flex: 1;
+}
+
+#titlebar-logo-main {
+  font-family: 'Outfit', 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .18em;
+  color: #e0e8ff;
+  text-transform: uppercase;
+}
+
+#titlebar-logo-sub {
+  font-family: 'Outfit', 'DM Sans', sans-serif;
+  font-size: 9px;
+  font-weight: 300;
+  letter-spacing: .30em;
+  color: #e8a24a;
+  text-transform: uppercase;
+}
+
+/* Botões de controle da janela */
+#titlebar-controls {
+  display: flex;
+  align-items: stretch;
+  height: 36px;
+  -webkit-app-region: no-drag;
+}
+
+#titlebar-controls button {
+  width: 46px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: #7a82a0;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .12s ease, color .12s ease;
+  border-radius: 0;
+  box-shadow: none !important;
+  -webkit-app-region: no-drag;
+  padding: 0;
+}
+
+#tb-minimize:hover { background: rgba(255,255,255,.08); color: #e0e8ff; }
+#tb-maximize:hover { background: rgba(255,255,255,.08); color: #e0e8ff; }
+#tb-close:hover    { background: #e81123; color: #fff; }
+
+/* ── Ajuste de layout quando titlebar está ativa ─────────── */
+html.has-titlebar body {
+  padding-top: calc(var(--nav-h) + 36px) !important;
+}
+html.has-titlebar .navbar {
+  top: 36px !important;
+}
+html.has-titlebar .sidebar {
+  top: calc(var(--nav-h) + 36px) !important;
+  height: calc(100vh - var(--nav-h) - 36px) !important;
+}
+html.has-titlebar body.nav-collapsed {
+  padding-top: 36px !important;
+}
+html.has-titlebar body.nav-collapsed .sidebar {
+  top: 36px !important;
+  height: calc(100vh - 36px) !important;
+}
+
+/* ── Correção: navbar abaixo da titlebar Electron ─────────── */
+#titlebar {
+  z-index: 999999 !important;
+}
+nav.navbar {
+  top: 36px !important;
+  z-index: 1040 !important;
+}
+.sidebar {
+  top: calc(var(--nav-h, 56px) + 36px) !important;
+  height: calc(100vh - var(--nav-h, 56px) - 36px) !important;
+}
+body {
+  padding-top: calc(var(--nav-h, 56px) + 36px) !important;
+}

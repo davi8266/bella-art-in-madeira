@@ -29,6 +29,45 @@
   <style id="pre-auth">#app-shell{display:none}#login-screen{display:flex}</style>
 </head>
 <body class="bg-light">
+
+  <!-- Titlebar Electron -->
+  <div id="titlebar" style="display:flex;position:fixed;top:0;left:0;right:0;height:36px;background:#0e1018;border-bottom:1px solid rgba(120,140,220,.2);z-index:99999;align-items:center;justify-content:space-between;-webkit-app-region:drag;user-select:none;">
+    <div style="-webkit-app-region:drag;display:flex;align-items:baseline;gap:6px;padding-left:14px;flex:1;">
+      <span style="font-family:'Outfit','DM Sans',sans-serif;font-size:12px;font-weight:700;letter-spacing:.18em;color:#e0e8ff;text-transform:uppercase;">BELLA ART</span>
+      <span style="font-family:'Outfit','DM Sans',sans-serif;font-size:9px;font-weight:300;letter-spacing:.30em;color:#e8a24a;text-transform:uppercase;">in madeira</span>
+    </div>
+    <div id="tb-btns" style="-webkit-app-region:no-drag;display:flex;height:36px;">
+      <button onclick="window.electronAPI&&window.electronAPI.minimize()" style="width:46px;height:36px;border:none;background:transparent;color:#7a82a0;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;" onmouseover="this.style.background='rgba(255,255,255,.1)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='#7a82a0'">&#8211;</button>
+      <button onclick="window.electronAPI&&window.electronAPI.maximize()" style="width:46px;height:36px;border:none;background:transparent;color:#7a82a0;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;" onmouseover="this.style.background='rgba(255,255,255,.1)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='#7a82a0'">&#9633;</button>
+      <button onclick="window.electronAPI&&window.electronAPI.closeWindow()" style="width:46px;height:36px;border:none;background:transparent;color:#7a82a0;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;" onmouseover="this.style.background='#e81123';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='#7a82a0'">&#10005;</button>
+    </div>
+  </div>
+  <script>
+    // Ajusta layout para acomodar a titlebar
+    document.body.style.paddingTop = 'calc(var(--nav-h, 56px) + 36px)';
+    document.addEventListener('DOMContentLoaded', function() {
+      var nb = document.querySelector('nav.navbar');
+      if (nb) nb.style.top = '36px';
+      var sb = document.querySelector('.sidebar');
+      if (sb) {
+        sb.style.top = 'calc(var(--nav-h, 56px) + 36px)';
+        sb.style.height = 'calc(100vh - var(--nav-h, 56px) - 36px)';
+      }
+      // Se NAO for Electron, esconde a titlebar
+      setTimeout(function() {
+        if (!window.electronAPI || !window.electronAPI.isElectron) {
+          var tb = document.getElementById('titlebar');
+          if (tb) tb.style.display = 'none';
+          document.body.style.paddingTop = '';
+          var nb2 = document.querySelector('nav.navbar');
+          if (nb2) nb2.style.top = '';
+          var sb2 = document.querySelector('.sidebar');
+          if (sb2) { sb2.style.top = ''; sb2.style.height = ''; }
+        }
+      }, 500);
+    });
+  </script>
+
   <div id="init-loader" style="position:fixed;top:0;left:0;right:0;bottom:0;background:#fff;z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;">
     <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
     <h3 class="mt-3 text-secondary">Carregando Bellart...</h3>
