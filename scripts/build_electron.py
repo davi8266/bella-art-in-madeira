@@ -108,6 +108,16 @@ def step4_copy_backend():
     if os.path.exists(fe_dst):
         force_remove(fe_dst)
     shutil.copytree(os.path.join(ROOT, 'frontend'), fe_dst)
+    # Copiar banco de dados existente (se houver)
+    db_src = os.path.join(ROOT, 'data', 'bellart.db')
+    db_dst_dir = os.path.join(PYTHON_DIST, 'data')
+    db_dst = os.path.join(db_dst_dir, 'bellart.db')
+    if os.path.exists(db_src):
+        os.makedirs(db_dst_dir, exist_ok=True)
+        shutil.copy2(db_src, db_dst)
+        p('✅ Banco de dados copiado')
+    else:
+        p('⚠️  Banco não encontrado em data/bellart.db — será criado na primeira execução')
     p('✅ Backend copiado')
 
 
