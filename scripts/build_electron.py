@@ -14,10 +14,22 @@ O que faz:
 
 import os
 import sys
+import stat
 import shutil
 import subprocess
 import urllib.request
 import zipfile
+
+
+def force_remove(path):
+    """Remove diretório mesmo com arquivos somente-leitura (necessário no Windows)."""
+    def on_error(func, fpath, exc_info):
+        try:
+            os.chmod(fpath, stat.S_IWRITE)
+            func(fpath)
+        except Exception:
+            pass
+    shutil.rmtree(path, onerror=on_error)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PYTHON_DIST = os.path.join(ROOT, 'python-dist')
@@ -45,7 +57,7 @@ def step1_download_python():
         urllib.request.urlretrieve(PYTHON_EMBED_URL, PYTHON_EMBED_ZIP)
     p('📦 Extraindo Python...')
     if os.path.exists(PYTHON_DIR):
-        shutil.rmtree(PYTHON_DIR)
+        force_remove(PYTHON_DIR)
     os.makedirs(PYTHON_DIR)
     with zipfile.ZipFile(PYTHON_EMBED_ZIP, 'r') as z:
         z.extractall(PYTHON_DIR)
@@ -89,12 +101,12 @@ def step4_copy_backend():
     # Copiar pasta app/
     app_dst = os.path.join(PYTHON_DIST, 'app')
     if os.path.exists(app_dst):
-        shutil.rmtree(app_dst)
+        force_remove(app_dst)
     shutil.copytree(os.path.join(ROOT, 'app'), app_dst)
     # Copiar frontend/
     fe_dst = os.path.join(PYTHON_DIST, 'frontend')
     if os.path.exists(fe_dst):
-        shutil.rmtree(fe_dst)
+        force_remove(fe_dst)
     shutil.copytree(os.path.join(ROOT, 'frontend'), fe_dst)
     p('✅ Backend copiado')
 

@@ -9,6 +9,14 @@ const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
 const fs = require('fs');
+const crypto = require('crypto');
+
+// Token único gerado a cada inicialização — só o Electron sabe
+const BELLART_SECRET = crypto.randomBytes(32).toString('hex');
+
+// ── Nome do app (garante nome correto na taskbar mesmo em dev) ─
+app.setName('Sistema Bella Art in madeira');
+app.setAppUserModelId('Sistema Bella Art in madeira');
 
 // ── Configurações ─────────────────────────────────────────────
 const PORT = 8765;
@@ -72,55 +80,94 @@ function getCwd() {
   return path.join(__dirname, '..');
 }
 
+// ── Log em arquivo (para diagnóstico em produção) ─────────────
+const LOG_PATH = path.join(app.getPath('userData'), 'bellart-python.log');
+let logStream = null;
+try {
+  const fsSync = require('fs');
+  logStream = fsSync.createWriteStream(LOG_PATH, { flags: 'w' });
+} catch(e) {}
+function logLine(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}`;
+  console.log(line);
+  if (logStream) logStream.write(line + '\n');
+}
+
 // ── Subir o backend Python ────────────────────────────────────
+let _splashRef = null; // referência para fechar splash em caso de erro antes da janela abrir
 function startPython() {
   const pythonExe = findPython();
   const runScript = getRunScript();
   const cwd = getCwd();
 
-  console.log(`[Electron] Python: ${pythonExe}`);
-  console.log(`[Electron] Script: ${runScript}`);
-  console.log(`[Electron] CWD: ${cwd}`);
+  logLine(`[Electron] Python: ${pythonExe}`);
+  logLine(`[Electron] Script: ${runScript}`);
+  logLine(`[Electron] CWD: ${cwd}`);
+  logLine(`[Electron] Log: ${LOG_PATH}`);
+
+  // Verificar se o executável existe antes de tentar iniciar
+  if (!isDev && !fs.existsSync(pythonExe)) {
+    dialog.showErrorBox(
+      'Python não encontrado',
+      `O Python embutido não foi encontrado em:\n${pythonExe}\n\nO build pode estar incompleto. Tente reconstruir o aplicativo.`
+    );
+    app.quit();
+    return;
+  }
 
   pythonProcess = spawn(pythonExe, [runScript], {
     cwd,
-    env: { ...process.env, PYTHONUNBUFFERED: '1' },
+    env: { ...process.env, PYTHONUNBUFFERED: '1', BELLART_SECRET },
     windowsHide: true,
     shell: false,
   });
 
+  let stderrBuffer = '';
+
   pythonProcess.stdout.on('data', (data) => {
-    console.log(`[Python] ${data.toString().trim()}`);
+    logLine(`[Python stdout] ${data.toString().trim()}`);
   });
 
   pythonProcess.stderr.on('data', (data) => {
     const msg = data.toString().trim();
-    console.log(`[Python] ${msg}`);
-    // uvicorn loga no stderr — não tratar como erro real
+    logLine(`[Python stderr] ${msg}`);
+    stderrBuffer += msg + '\n';
   });
 
   pythonProcess.on('error', (err) => {
-    console.error(`[Python ERRO] ${err.message}`);
+    logLine(`[Python ERRO] ${err.message}`);
+    if (_splashRef && !_splashRef.isDestroyed()) _splashRef.close();
     dialog.showErrorBox(
       'Python não encontrado',
-      `Não foi possível iniciar o Python.\n\nErro: ${err.message}\n\nVerifique se o Python 3.11 está instalado e no PATH.`
+      `Não foi possível iniciar o Python.\n\nErro: ${err.message}\n\nLog: ${LOG_PATH}`
     );
     app.quit();
   });
 
   pythonProcess.on('close', (code) => {
-    console.log(`[Python] Encerrado com código ${code}`);
-    if (code !== 0 && code !== null && mainWindow) {
-      dialog.showErrorBox(
-        'Servidor encerrado',
-        `O servidor Bellart encerrou inesperadamente (código ${code}).\n\nFeche e abra o Bellart novamente.`
-      );
+    logLine(`[Python] Encerrado com código ${code}`);
+    if (code !== 0 && code !== null) {
+      const detail = stderrBuffer.slice(-800) || '(sem saída)';
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        // Fechou antes da janela abrir — provavelmente erro de import
+        if (_splashRef && !_splashRef.isDestroyed()) _splashRef.close();
+        dialog.showErrorBox(
+          'Erro ao iniciar o servidor',
+          `O servidor Python encerrou inesperadamente (código ${code}).\n\nErro:\n${detail}\n\nLog completo: ${LOG_PATH}`
+        );
+        app.quit();
+      } else {
+        dialog.showErrorBox(
+          'Servidor encerrado',
+          `O servidor Bellart encerrou inesperadamente (código ${code}).\n\nFeche e abra o Bellart novamente.\n\nLog: ${LOG_PATH}`
+        );
+      }
     }
   });
 }
 
 // ── Aguardar servidor ─────────────────────────────────────────
-function waitForServer(retries = 50, delay = 500) {
+function waitForServer(retries = 120, delay = 1000) {
   return new Promise((resolve, reject) => {
     let attempts = 0;
     const check = () => {
@@ -158,7 +205,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: 'Bellart ERP',
+    title: 'Sistema Bella Art in madeira',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     backgroundColor: '#0e1018',
     show: false,
@@ -172,7 +219,42 @@ function createWindow() {
     autoHideMenuBar: true,
   });
 
-  mainWindow.loadURL(BASE_URL);
+  mainWindow.loadURL(BASE_URL, {
+    extraHeaders: 'Cache-Control: no-cache\n'
+  });
+
+  // Bloqueia todos os atalhos de DevTools (F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C)
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    const ctrl = input.control || input.meta;
+    const shift = input.shift;
+    const key = input.key;
+    if (
+      key === 'F12' ||
+      (ctrl && shift && (key === 'I' || key === 'i')) ||
+      (ctrl && shift && (key === 'J' || key === 'j')) ||
+      (ctrl && shift && (key === 'C' || key === 'c'))
+    ) {
+      event.preventDefault();
+    }
+  });
+
+  // Desativa menu de contexto (clique direito) para remover "Inspecionar Elemento"
+  mainWindow.webContents.on('context-menu', (e) => {
+    e.preventDefault();
+  });
+
+  // Garante que a titlebar aparece após o carregamento da página
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.executeJavaScript(`
+      (function() {
+        var tb = document.getElementById('titlebar');
+        if (tb) {
+          tb.style.display = 'flex';
+          document.documentElement.classList.add('has-titlebar');
+        }
+      })();
+    `).catch(() => {});
+  });
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
@@ -197,7 +279,7 @@ function createTray() {
     : nativeImage.createEmpty();
 
   tray = new Tray(icon);
-  tray.setToolTip('Bellart ERP');
+  tray.setToolTip('Sistema Bella Art in madeira');
 
   const menu = Menu.buildFromTemplate([
     {
@@ -237,10 +319,15 @@ function createSplash() {
 
 // ── Inicialização ─────────────────────────────────────────────
 app.whenReady().then(async () => {
-  // Adiciona 'BellartElectron' ao userAgent para detecção no frontend
   const { session } = require('electron');
+
+  // Limpa o cache para garantir que sempre carrega os arquivos mais recentes
+  await session.defaultSession.clearCache();
+
+  // Adiciona 'BellartElectron' ao userAgent e injeta o token secreto em todas as requisições
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
     details.requestHeaders['User-Agent'] += ' BellartElectron';
+    details.requestHeaders['X-Bellart-Secret'] = BELLART_SECRET;
     callback({ requestHeaders: details.requestHeaders });
   });
   // Garante instância única
@@ -256,17 +343,18 @@ app.whenReady().then(async () => {
   createTray();
 
   const splash = createSplash();
+  _splashRef = splash;
   startPython();
 
   try {
     await waitForServer();
-    splash.close();
+    if (!splash.isDestroyed()) splash.close();
     createWindow();
   } catch (err) {
-    splash.close();
+    if (!splash.isDestroyed()) splash.close();
     dialog.showErrorBox(
       'Erro ao iniciar',
-      `Não foi possível conectar ao servidor Bellart.\n\n${err.message}\n\nVerifique se o Python 3.11 está instalado corretamente e tente novamente.`
+      `O servidor não respondeu após 120 tentativas.\n\nLog de erros salvo em:\n${LOG_PATH}\n\nAbra esse arquivo para ver o erro detalhado do Python.`
     );
     app.quit();
   }
@@ -289,6 +377,10 @@ ipcMain.on('window-maximize', () => {
 });
 ipcMain.on('window-close', () => {
   if (!app.isQuitting && mainWindow) mainWindow.hide();
+});
+ipcMain.on('app-quit', () => {
+  app.isQuitting = true;
+  app.quit();
 });
 ipcMain.handle('get-version', () => app.getVersion());
 

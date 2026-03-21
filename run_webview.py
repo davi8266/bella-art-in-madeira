@@ -86,7 +86,22 @@ def is_up(url: str) -> bool:
 # API exposta ao JS (pywebview)
 # ---------------------------------------------------------------------------
 
+_window = None
+
+
 class Api:
+    def minimize(self) -> None:
+        if _window:
+            _window.minimize()
+
+    def toggle_maximize(self) -> None:
+        if _window:
+            _window.maximize()
+
+    def close_window(self) -> None:
+        if _window:
+            _window.destroy()
+
     def save_file_dialog(self, filename: str, content_base64: str) -> dict:
         import base64
         import tkinter as tk
@@ -173,8 +188,9 @@ def main():
                 print("[run_webview] Aviso: servidor demorou a responder.")
 
     try:
+        global _window
         api = Api()
-        webview.create_window(
+        _window = webview.create_window(
             window_title,
             target_url,
             width=1200,

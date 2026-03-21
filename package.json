@@ -10,7 +10,7 @@
   },
   "build": {
     "appId": "com.bellaart.erp",
-    "productName": "Bellart",
+    "productName": "Sistema Bella Art in madeira",
     "copyright": "Bella Art in Madeira",
     "directories": {
       "output": "dist-electron"
@@ -19,8 +19,7 @@
       "electron/**/*",
       "frontend/**/*",
       "app/**/*",
-      "data/.gitkeep",
-      "python-dist/**/*"
+      "data/.gitkeep"
     ],
     "extraResources": [
       {
@@ -54,7 +53,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Bellart ERP",
+      "shortcutName": "Sistema Bella Art in madeira",
       "installerIcon": "frontend/static/logo.ico",
       "uninstallerIcon": "frontend/static/logo.ico",
       "installerHeaderIcon": "frontend/static/logo.ico",
