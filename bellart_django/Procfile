@@ -1,0 +1,1 @@
+web: gunicorn bellart.wsgi --log-file -

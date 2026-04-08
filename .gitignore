@@ -1,42 +1,44 @@
-# Python
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
 .Python
 
-# Build / distribuição
-*.spec
-build/
-dist/
-*.egg-info/
-*.exe
+# ── Django ────────────────────────────────────────────────────────────────────
+bellart_django/staticfiles/
+bellart_django/media/
+bellart_django/data/
 
-# Banco de dados — NUNCA commitar dados reais
-data/
+# ── Banco de dados ────────────────────────────────────────────────────────────
 *.db
+*.db-shm
+*.db-wal
 *.db.bak
-*.db.bak_migration
-banco_externo.db
+data/
 
-# Runtime
-uploads/
-backups/
-frontend/web/uploads/
-
-# Ambiente virtual
+# ── Ambiente virtual ──────────────────────────────────────────────────────────
 venv/
 env/
 .venv/
 
-# Scripts de debug (não devem ir pro repositório)
-debug_db*.py
-check_*.py
+# ── Variáveis de ambiente ─────────────────────────────────────────────────────
+.env
+*.env
 
-# IDE
+# ── IDE ───────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 
-# OS
+# ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# ── Build antigo (Electron/PyInstaller) ───────────────────────────────────────
+build/
+dist/
+dist-electron/
+python-dist/
+node_modules/
+*.exe
+*.spec
