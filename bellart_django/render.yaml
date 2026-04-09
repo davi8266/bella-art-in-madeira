@@ -4,7 +4,7 @@ services:
     runtime: python
     buildCommand: >
       pip install -r requirements.txt &&
-      python manage.py migrate --noinput &&
+      python manage.py migrate --run-syncdb --noinput &&
       python manage.py seed &&
       python manage.py collectstatic --noinput
     startCommand: gunicorn bellart.wsgi --log-file -
